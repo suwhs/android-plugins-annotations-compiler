@@ -1,0 +1,116 @@
+import android.os.RemoteException;
+
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import su.whs.plugins.annotations.IPluginInterface;
+
+/**
+ * Created by igor n. boulliev on 12.08.15.
+ */
+
+public class PluginsManager {
+    private static final String TAG = "PluginsManager";
+    private static PluginsManager mInstance = new PluginsManager();
+    private Map<String, List<IPluginInterface>> mPluginsMap = new HashMap<String,List<IPluginInterface>>();
+
+    public interface OnPluginsStateChangedListener {
+        void onPluginRegistered(String fqdnName, IPluginInterface plugin);
+        void onPluginUnregistered(String fqdnName, IPluginInterface plugin);
+        void onRemoteException(IPluginInterface plugin, RemoteException e);
+    }
+
+    private List<WeakReference<OnPluginsStateChangedListener>> mListeners = new ArrayList<WeakReference<OnPluginsStateChangedListener>>();
+
+    private PluginsManager() {
+
+    }
+
+    public static synchronized PluginsManager getInstance() { return mInstance; }
+
+    public void register(IPluginInterface pluginImplementation) {
+        String fqdnName = pluginImplementation.getClass().getCanonicalName();
+        if (!mPluginsMap.containsKey(fqdnName))
+            mPluginsMap.put(fqdnName,new ArrayList<IPluginInterface>());
+        List<IPluginInterface> list = mPluginsMap.get(fqdnName);
+        if (!list.contains(pluginImplementation)) {
+            list.add(pluginImplementation);
+            notifyPluginRegistered(fqdnName, pluginImplementation);
+        }
+    }
+
+    public void unregister(IPluginInterface pluginImplementation) {
+        String fqdnName = pluginImplementation.getClass().getCanonicalName();
+        if (!mPluginsMap.containsKey(fqdnName))
+            return;
+        List<IPluginInterface> list = mPluginsMap.get(fqdnName);
+        if (list.contains(pluginImplementation)) {
+            list.remove(pluginImplementation);
+            if (list.size()<1) {
+                mPluginsMap.remove(fqdnName);
+            }
+            notifyPluginUnregistered(fqdnName, pluginImplementation);
+        }
+    }
+
+    public synchronized List<? extends IPluginInterface> get(Class<? extends IPluginInterface> type) {
+        String fqdnName = type.getCanonicalName();
+        if (mPluginsMap.containsKey(fqdnName))
+            return mPluginsMap.get(fqdnName);
+        return new ArrayList<>(0);
+    }
+
+    private synchronized void notifyPluginRegistered(String fqdnName, IPluginInterface pluginInterface) {
+        for(int i=0; i<mListeners.size();i++) {
+            WeakReference<OnPluginsStateChangedListener> listenerWeakReference = mListeners.get(i);
+            OnPluginsStateChangedListener listener = listenerWeakReference.get();
+            if (listener==null) continue;
+            // call
+            listener.onPluginRegistered(fqdnName,pluginInterface);
+        }
+    }
+
+    private synchronized void notifyPluginUnregistered(String fqdnName, IPluginInterface pluginInterface) {
+        for(int i=0; i<mListeners.size();i++) {
+            WeakReference<OnPluginsStateChangedListener> listenerWeakReference = mListeners.get(i);
+            OnPluginsStateChangedListener listener = listenerWeakReference.get();
+            if (listener==null) continue;
+            // call
+            listener.onPluginUnregistered(fqdnName,pluginInterface);
+        }
+    }
+
+    public synchronized void notifyOnRemoteException(IPluginInterface pluginInterface, RemoteException e) {
+        for(int i=0; i<mListeners.size();i++) {
+            WeakReference<OnPluginsStateChangedListener> listenerWeakReference = mListeners.get(i);
+            OnPluginsStateChangedListener listener = listenerWeakReference.get();
+            if (listener==null) continue;
+            // call
+            listener.onRemoteException(pluginInterface,e);
+        }
+    }
+
+    private synchronized void registerOnPluginsStateChangedListener(OnPluginsStateChangedListener listener) {
+        for(int i=0; i<mListeners.size();i++) {
+            WeakReference<OnPluginsStateChangedListener> listenerWeakReference = mListeners.get(i);
+            if (listener==listenerWeakReference.get())
+                return;
+        }
+        mListeners.add(new WeakReference<OnPluginsStateChangedListener>(listener));
+    }
+
+    private synchronized void removeOnPluginsStateChangedListener(OnPluginsStateChangedListener listener) {
+        List<WeakReference> cleanupList = new ArrayList<WeakReference>();
+        for(int i=0; i<mListeners.size(); i++) {
+            WeakReference<OnPluginsStateChangedListener> listenerWeakReference = mListeners.get(i);
+            OnPluginsStateChangedListener currentListener = listenerWeakReference.get();
+            if (currentListener==null||currentListener==listener) {
+                cleanupList.add(listenerWeakReference);
+            }
+        }
+        mListeners.removeAll(cleanupList);
+    }
+}
